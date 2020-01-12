@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 var (
@@ -15,20 +16,15 @@ var (
 	componentName string
 )
 
-func do(output io.Writer, input io.Reader, pkg string) error {
-	if err := generate(output, input); err != nil && err != io.EOF {
-		return err
-	}
-	return nil
-}
-
 func main() {
 	log.SetFlags(log.Lshortfile)
 	flag.StringVar(&outputName, "o", "", "output filename")
 	flag.StringVar(&packageName, "p", "main", "output package name")
-	flag.StringVar(&componentName, "c", "Component", "component name")
+	flag.StringVar(&componentName, "c", "", "component name")
 	flag.Parse()
 	inputName := flag.Arg(0)
+	baseName := inputName[:len(inputName)-len(filepath.Ext(inputName))]
+	name := filepath.Base(baseName)
 	var input io.Reader = os.Stdin
 	if len(inputName) > 0 && inputName != "-" {
 		r, err := os.Open(inputName)
@@ -40,41 +36,33 @@ func main() {
 	}
 	if len(outputName) == 0 {
 		if len(inputName) > 0 {
-			outputName = inputName[:len(inputName)-len(filepath.Ext(inputName))] + "_gen.go"
+			outputName = baseName + "_gen.go"
 		} else {
 			outputName = "generated.go"
 		}
+	}
+	if len(componentName) == 0 {
+		componentName = strings.Title(name)
 	}
 	output, err := os.Create(outputName)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer output.Close()
+
 	log.Printf("gen: %s -> %s", inputName, outputName)
+	converter := New()
 	buffer := bytes.NewBuffer(nil)
-	if err := do(buffer, input, packageName); err != nil {
+	if err := converter.Do(buffer, input, packageName); err != nil {
 		log.Fatal(err)
-	}
-	stdImports := []string{}
-	imports := []string{
-		"github.com/gopherjs/vecty",
-		"github.com/gopherjs/vecty/elem",
-		"github.com/gopherjs/vecty/prop",
-	}
-	methods := map[string]struct{}{
-		"OnClick":    struct{}{},
-		"OnDblClick": struct{}{},
-	}
-	if len(methods) > 0 {
-		stdImports = append(stdImports, "log")
 	}
 	if err := templ.Execute(output, map[string]interface{}{
 		"PkgName":       packageName,
-		"StdImports":    stdImports,
-		"Imports":       imports,
+		"StdImports":    converter.StdModules,
+		"Imports":       converter.ExtModules,
 		"ComponentName": componentName,
 		"Generated":     buffer.String(),
-		"Methods":       methods,
+		"Methods":       converter.Methods,
 	}); err != nil {
 		log.Fatal(err)
 	}

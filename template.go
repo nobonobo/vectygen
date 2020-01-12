@@ -5,24 +5,37 @@ import "text/template"
 var templ = template.Must(template.New("").Parse(`package {{.PkgName}}
 
 import (
-{{range $v := .StdImports}}{{printf "\t%q\n" $v}}{{end -}}
+{{range $v, $_ := .StdImports}}{{printf "\t%q\n" $v}}{{end -}}
 {{if .StdImports}}{{printf "\n"}}{{end -}}
-{{range $v := .Imports}}{{printf "\t%q\n" $v}}{{end -}}
+{{range $v, $_ := .Imports}}{{printf "\t%q\n" $v}}{{end -}}
 )
 
-// {{.ComponentName}}Base ...
-type {{.ComponentName}}Base struct{
+// New{{.ComponentName}} ...
+func New{{.ComponentName}}(d map[string]func(*vecty.Event)) *{{.ComponentName}} {
+	return &{{.ComponentName}}{
+		dispatcher: d,
+	}
+}
+
+// {{.ComponentName}} ...
+type {{.ComponentName}} struct{
 	vecty.Core
+	dispatcher map[string]func(*vecty.Event)
 }
 
 // Render ...
-func (c *{{.ComponentName}}Base) Render() vecty.ComponentOrHTML {
+func (c *{{.ComponentName}}) Render() vecty.ComponentOrHTML {
 	return {{.Generated}}
 }
-{{range $method, $v := .Methods}}
+
+{{range $event, $method := .Methods -}}
 // {{$method}} ...
-func (c *{{$.ComponentName}}Base) {{$method}}(event *vecty.Event) {
-	log.Print("{{$method}} not implement")
+func (c *{{$.ComponentName}}) {{$method}}(event *vecty.Event) {
+	f, ok := c.dispatcher["{{$method}}"]
+	if !ok {
+		panic("unknown func: \"{{$method}}\"")
+	}
+	f(event)
 }
 {{end}}
 `))
